@@ -1,0 +1,43 @@
+I'll update the implementation plan based on your clarifications:
+
+Updated Implementation Plan for Database Connection & Metadata Management
+Part 1: Database Models and Constants (in databases app)
+Define database type constants (PostgreSQL)
+Define connection status constants (connected, disconnected, error)
+Implement ClientDatabase, TableMetadata, ColumnMetadata, and RelationshipMetadata models
+Set up appropriate foreign key relationships
+Part 2: Database Connection Service (in databases app)
+Create a basic DatabaseConnector service with PostgreSQL support
+Implement connection testing methods for database types
+Create simple query execution methods with proper error handling
+Implement connection status tracking (connected when in use, disconnected when idle)
+Part 3: Metadata Extraction (in databases app)
+Create PostgreSQL schema introspection using information_schema
+Implement a unified metadata extraction interface for database types
+Add extraction methods for tables, columns, and relationships
+Part 4: Metadata Processing for RAG (in databases app)
+Set up the MetadataVectorizer service structure
+Create skeleton for table and column description generators
+Set up placeholder for vector embedding generation
+Prepare metadata caching mechanism structure
+Part 5: API Endpoints and Views (in databases app)
+Create DatabaseViewSet for CRUD operations on database connections
+Add connection testing endpoint
+Implement metadata update endpoints
+Create read-only endpoints for schema access
+Part 6: Serializers (in databases app)
+Create serializers for ClientDatabase model
+Implement serializers for metadata models
+Add specialized serializers for the API responses
+Part 7: URLs and Routing (in databases app)
+Define URL patterns for database endpoints
+Register ViewSets with routers
+Connect to the main URL configuration
+Part 8: User Integration (in user app)
+Add database ownership relationship with existing User model
+Set up permissive access controls for testing
+Part 9: Project Configuration (in main backend app)
+Register the databases app in Django settings
+Add any required third-party packages to requirements.txt
+Configure permissions to allow all for development/testing
+This plan follows your existing backend structure and focuses on creating the basic structure with placeholder functions that can be filled in later. All database connection and metadata-related code will be in the databases app, with minimal integration with the user app for ownership.

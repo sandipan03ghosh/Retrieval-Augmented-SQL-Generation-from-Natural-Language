@@ -1,0 +1,675 @@
+# LLM SQL Backend Implementation Plan
+
+## Part 1: Database Connection & Metadata Management
+
+### Core Responsibilities
+- Managing database connections from clients
+- Extracting and processing database schema metadata
+- Building and maintaining the schema knowledge base for RAG
+- Handling metadata updates and versioning
+
+### Django Apps to Focus On
+- `databases` (primary)
+- `user` (partial - for database ownership)
+
+### Models (databases/models.py)
+
+```python
+# Key models to implement
+class ClientDatabase(models.Model):
+    """Represents a client's database connection"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    owner = models.ForeignKey('user.User', on_delete=models.CASCADE, related_name='databases')
+    database_type = models.CharField(max_length=50, choices=DATABASE_TYPES, default='postgresql')
+    host = models.CharField(max_length=255)
+    port = models.IntegerField(default=5432)
+    database_name = models.CharField(max_length=255)
+    username = models.CharField(max_length=255)
+    # Password should be encrypted in actual implementation
+    password = models.CharField(max_length=255)
+    ssl_enabled = models.BooleanField(default=False)
+    ssl_ca = models.TextField(null=True, blank=True)
+    ssl_cert = models.TextField(null=True, blank=True)
+    ssl_key = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_metadata_update = models.DateTimeField(null=True)
+    connection_status = models.CharField(max_length=20, choices=CONNECTION_STATUS, default='disconnected')
+    
+    def get_connection(self):
+        """Creates a database connection based on stored credentials"""
+        # Implementation for creating actual database connections
+        pass
+
+class TableMetadata(models.Model):
+    """Stores metadata about database tables"""
+    database = models.ForeignKey(ClientDatabase, on_delete=models.CASCADE, related_name='tables')
+    schema_name = models.CharField(max_length=255, default='public')
+    table_name = models.CharField(max_length=255)
+    table_type = models.CharField(max_length=50)  # table, view, etc.
+    description = models.TextField(null=True, blank=True)
+    row_count = models.IntegerField(null=True)
+    embedding_vector = models.JSONField(null=True)  # For semantic search
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('database', 'schema_name', 'table_name')
+
+class ColumnMetadata(models.Model):
+    """Stores metadata about table columns"""
+    table = models.ForeignKey(TableMetadata, on_delete=models.CASCADE, related_name='columns')
+    column_name = models.CharField(max_length=255)
+    data_type = models.CharField(max_length=100)
+    is_nullable = models.BooleanField(default=True)
+    is_primary_key = models.BooleanField(default=False)
+    is_foreign_key = models.BooleanField(default=False)
+    description = models.TextField(null=True, blank=True)
+    embedding_vector = models.JSONField(null=True)  # For semantic search
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('table', 'column_name')
+
+class RelationshipMetadata(models.Model):
+    """Stores relationships between tables (foreign keys)"""
+    from_column = models.ForeignKey(ColumnMetadata, on_delete=models.CASCADE, related_name='outgoing_relationships')
+    to_column = models.ForeignKey(ColumnMetadata, on_delete=models.CASCADE, related_name='incoming_relationships')
+    relationship_type = models.CharField(max_length=50)  # one-to-one, one-to-many, etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+```
+
+### Services (databases/services.py)
+
+```python
+# Key services to implement
+class DatabaseConnector:
+    """Handles database connection and basic operations"""
+    def create_connection(self, database_obj):
+        # Create connection to database using credentials
+        pass
+        
+    def test_connection(self, database_obj):
+        # Test if connection works
+        pass
+        
+    def execute_query(self, database_obj, query, params=None):
+        # Execute SQL query on the database
+        pass
+
+class MetadataExtractor:
+    """Extracts schema metadata from connected databases"""
+    def extract_full_metadata(self, database_obj):
+        # Extract tables, columns, relationships from database
+        pass
+        
+    def extract_table_metadata(self, database_obj, table_name):
+        # Extract metadata for a specific table
+        pass
+        
+    def generate_table_description(self, table_metadata):
+        # Generate natural language description of table
+        pass
+        
+    def generate_column_description(self, column_metadata):
+        # Generate natural language description of column
+        pass
+
+class MetadataVectorizer:
+    """Creates vector embeddings for metadata for RAG"""
+    def create_table_embedding(self, table_metadata):
+        # Generate embedding vector for table
+        pass
+        
+    def create_column_embedding(self, column_metadata):
+        # Generate embedding vector for column
+        pass
+        
+    def update_all_embeddings(self, database_obj):
+        # Update all embeddings for a database
+        pass
+```
+
+### API Endpoints (databases/views.py)
+
+```python
+# Key API endpoints to implement
+class DatabaseViewSet(viewsets.ModelViewSet):
+    """CRUD operations for database connections"""
+    queryset = ClientDatabase.objects.all()
+    serializer_class = ClientDatabaseSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=True, methods=['post'])
+    def test_connection(self, request, pk=None):
+        # Test database connection
+        pass
+        
+    @action(detail=True, methods=['post'])
+    def update_metadata(self, request, pk=None):
+        # Trigger metadata update
+        pass
+
+class MetadataViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only endpoints for accessing metadata"""
+    queryset = TableMetadata.objects.all()
+    serializer_class = TableMetadataSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['get'])
+    def schema(self, request):
+        # Get full schema for a database
+        pass
+```
+
+### Required Tasks
+
+1. **Database Connection Management**
+   - Implement secure credential storage using encryption
+   - Create connection pooling for efficient database access
+   - Build connection testing and monitoring system
+
+2. **Metadata Extraction**
+   - Develop schema introspection for PostgreSQL
+   - Create efficient metadata update mechanisms
+   - Implement metadata versioning for schema changes
+
+3. **Metadata Processing**
+   - Build natural language description generation for tables/columns
+   - Create vector embeddings generation pipeline
+   - Implement metadata caching for performance
+
+4. **API Development**
+   - Create REST endpoints for database CRUD operations
+   - Develop metadata access and update endpoints
+   - Implement permission controls for database access
+
+## Part 2: RAG & LLM Integration
+
+### Core Responsibilities
+- Implementing the RAG framework for context retrieval
+- Integrating and optimizing LLMs for SQL generation
+- Building the query understanding and intent detection system
+- Developing self-debugging mechanisms for SQL refinement
+
+### Django Apps to Focus On
+- `llm_agent` (primary)
+- `databases` (integration for metadata)
+
+### Models (llm_agent/models.py)
+
+```python
+# Key models to implement
+class LLMModel(models.Model):
+    """Represents an LLM configuration"""
+    name = models.CharField(max_length=255)
+    model_type = models.CharField(max_length=100)  # llama, deepseek, etc
+    model_path = models.CharField(max_length=512)
+    quantization = models.CharField(max_length=50, null=True, blank=True)  # 4bit, 8bit, etc
+    max_context_length = models.IntegerField(default=4096)
+    temperature = models.FloatField(default=0.7)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class RAGIndex(models.Model):
+    """Stores RAG vector index information"""
+    database = models.ForeignKey('databases.ClientDatabase', on_delete=models.CASCADE, related_name='rag_indexes')
+    index_type = models.CharField(max_length=50)  # faiss, chroma, etc
+    index_path = models.CharField(max_length=512)
+    embedding_model = models.CharField(max_length=255)
+    document_count = models.IntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+    metadata = models.JSONField(null=True, blank=True)
+
+class QueryExample(models.Model):
+    """Stores example queries for few-shot learning"""
+    natural_language_query = models.TextField()
+    sql_query = models.TextField()
+    database_type = models.CharField(max_length=50)
+    tags = models.JSONField(default=list)
+    complexity = models.IntegerField(default=1)  # 1-10 scale
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+class PromptTemplate(models.Model):
+    """Stores prompt templates for LLM"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    template_text = models.TextField()
+    version = models.CharField(max_length=50, default='1.0')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+```
+
+### Services (llm_agent/services.py)
+
+```python
+# Key services to implement
+class LLMService:
+    """Handles LLM integration and inference"""
+    def load_model(self, model_obj):
+        # Load LLM model based on configuration
+        pass
+        
+    def generate_completion(self, prompt, model_obj=None, **kwargs):
+        # Generate text completion using LLM
+        pass
+        
+    def get_embedding(self, text, model_name=None):
+        # Generate embeddings for text
+        pass
+
+class RAGService:
+    """Manages RAG operations"""
+    def create_index(self, database_obj):
+        # Create vector index from database metadata
+        pass
+        
+    def update_index(self, database_obj):
+        # Update existing vector index
+        pass
+        
+    def retrieve_relevant_context(self, query, database_obj, top_k=5):
+        # Retrieve relevant tables and columns for query
+        pass
+        
+    def get_similar_examples(self, query, database_obj, top_k=3):
+        # Find similar query examples for few-shot learning
+        pass
+
+class SQLGenerationService:
+    """Handles SQL generation pipeline"""
+    def generate_sql(self, natural_language_query, database_obj, session_obj=None):
+        # Generate SQL from natural language
+        pass
+        
+    def validate_sql(self, sql_query, database_obj):
+        # Validate SQL syntax and schema compatibility
+        pass
+        
+    def debug_sql(self, sql_query, error_message, database_obj):
+        # Debug and fix SQL errors
+        pass
+        
+    def optimize_sql(self, sql_query, database_obj):
+        # Optimize SQL query
+        pass
+```
+
+### API Endpoints (llm_agent/views.py)
+
+```python
+# Key API endpoints to implement
+class NLQueryViewSet(viewsets.ViewSet):
+    """Handles natural language query processing"""
+    permission_classes = [IsAuthenticated]
+    
+    def create(self, request):
+        # Process natural language query to SQL
+        pass
+        
+    @action(detail=False, methods=['post'])
+    def validate(self, request):
+        # Validate generated SQL
+        pass
+        
+    @action(detail=False, methods=['post'])
+    def execute(self, request):
+        # Execute generated SQL
+        pass
+        
+    @action(detail=False, methods=['post'])
+    def debug(self, request):
+        # Debug failed SQL query
+        pass
+
+class RAGManagementViewSet(viewsets.ViewSet):
+    """Manages RAG indexes"""
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['post'])
+    def build_index(self, request):
+        # Build RAG index for database
+        pass
+        
+    @action(detail=False, methods=['post'])
+    def update_index(self, request):
+        # Update RAG index
+        pass
+```
+
+### Required Tasks
+
+1. **LLM Integration**
+   - Set up LLaMA 3.1 8B model with optimized loading
+   - Configure Deepseek Distill for reasoning tasks
+   - Implement efficient inference with batching
+   - Create model management system for different tasks
+
+2. **RAG Framework Development**
+   - Build vector store integration (FAISS or Chroma)
+   - Create efficient indexing for database metadata
+   - Implement hybrid search (keyword + semantic)
+   - Develop context window management
+
+3. **NL-to-SQL Pipeline**
+   - Create prompt engineering templates for SQL generation
+   - Implement few-shot examples selection
+   - Build entity recognition for database elements
+   - Develop query complexity analysis
+
+4. **Self-Debugging Mechanism**
+   - Create SQL validation against schema
+   - Implement error detection and classification
+   - Build iterative refinement loop
+   - Develop SQL optimization suggestions
+
+## Part 3: Session Management & API Layer
+
+### Core Responsibilities
+- Managing user authentication and permissions
+- Building the session management system
+- Developing the API layer for frontend communication
+- Implementing logging and analytics
+
+### Django Apps to Focus On
+- `api` (primary)
+- `session` (primary)
+- `user` (primary)
+
+### Models (session/models.py)
+
+```python
+# Key models to implement
+class QuerySession(models.Model):
+    """Represents a user query session"""
+    name = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    user = models.ForeignKey('user.User', on_delete=models.CASCADE, related_name='sessions')
+    database = models.ForeignKey('databases.ClientDatabase', on_delete=models.CASCADE, related_name='sessions')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_activity = models.DateTimeField(auto_now=True)
+    context_data = models.JSONField(default=dict)  # Stores session context
+
+class QueryHistory(models.Model):
+    """Stores individual queries within a session"""
+    session = models.ForeignKey(QuerySession, on_delete=models.CASCADE, related_name='queries')
+    natural_language_query = models.TextField()
+    generated_sql = models.TextField(null=True)
+    execution_status = models.CharField(max_length=50)  # successful, failed, etc.
+    error_message = models.TextField(null=True, blank=True)
+    execution_time = models.FloatField(null=True)  # in seconds
+    result_metadata = models.JSONField(null=True, blank=True)  # row count, column info, etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class QueryResult(models.Model):
+    """Stores query results"""
+    query = models.OneToOneField(QueryHistory, on_delete=models.CASCADE, related_name='result')
+    result_data = models.JSONField(null=True)  # Actual result data
+    row_count = models.IntegerField(default=0)
+    is_truncated = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class UserMetrics(models.Model):
+    """Tracks usage metrics for users"""
+    user = models.ForeignKey('user.User', on_delete=models.CASCADE, related_name='metrics')
+    date = models.DateField()
+    query_count = models.IntegerField(default=0)
+    successful_queries = models.IntegerField(default=0)
+    failed_queries = models.IntegerField(default=0)
+    average_execution_time = models.FloatField(default=0)
+    total_execution_time = models.FloatField(default=0)
+```
+
+### Models (user/models.py)
+
+```python
+# Key models to implement
+class User(AbstractUser):
+    """Extended user model"""
+    organization = models.CharField(max_length=255, null=True, blank=True)
+    role = models.CharField(max_length=50, default='user')
+    is_client_admin = models.BooleanField(default=False)
+    last_login_ip = models.GenericIPAddressField(null=True, blank=True)
+    metadata = models.JSONField(default=dict)
+    
+class APIKey(models.Model):
+    """API keys for programmatic access"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='api_keys')
+    key_name = models.CharField(max_length=255)
+    key_prefix = models.CharField(max_length=10)  # First few chars of key for display
+    key_hash = models.CharField(max_length=255)  # Hashed API key
+    is_active = models.BooleanField(default=True)
+    last_used = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+```
+
+### Services (session/services.py)
+
+```python
+# Key services to implement
+class SessionManager:
+    """Manages query sessions"""
+    def create_session(self, user, database, name=None, description=None):
+        # Create new query session
+        pass
+        
+    def get_active_session(self, user, database=None):
+        # Get user's active session
+        pass
+        
+    def end_session(self, session_id):
+        # End a query session
+        pass
+        
+    def update_session_context(self, session_id, context_data):
+        # Update session context
+        pass
+
+class QueryExecutor:
+    """Executes and manages queries"""
+    def execute_query(self, query_id):
+        # Execute a query and store results
+        pass
+        
+    def get_query_status(self, query_id):
+        # Check status of query execution
+        pass
+        
+    def cancel_query(self, query_id):
+        # Cancel a running query
+        pass
+        
+    def save_query_result(self, query_id, result_data):
+        # Save query results
+        pass
+
+class MetricsCollector:
+    """Collects and aggregates usage metrics"""
+    def record_query_execution(self, query_obj):
+        # Record metrics for a query execution
+        pass
+        
+    def update_user_metrics(self, user_id):
+        # Update aggregated metrics for user
+        pass
+        
+    def get_user_statistics(self, user_id, time_range=None):
+        # Get usage statistics for user
+        pass
+```
+
+### API Endpoints (api/views.py)
+
+```python
+# Key API endpoints to implement
+class SessionViewSet(viewsets.ModelViewSet):
+    """CRUD operations for sessions"""
+    queryset = QuerySession.objects.all()
+    serializer_class = QuerySessionSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=True, methods=['post'])
+    def end(self, request, pk=None):
+        # End a session
+        pass
+        
+    @action(detail=True, methods=['get'])
+    def queries(self, request, pk=None):
+        # Get queries in a session
+        pass
+        
+    @action(detail=True, methods=['post'])
+    def update_context(self, request, pk=None):
+        # Update session context
+        pass
+
+class QueryHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read operations for query history"""
+    queryset = QueryHistory.objects.all()
+    serializer_class = QueryHistorySerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=True, methods=['get'])
+    def result(self, request, pk=None):
+        # Get query result
+        pass
+
+class MetricsViewSet(viewsets.ReadOnlyModelViewSet):
+    """Access usage metrics"""
+    queryset = UserMetrics.objects.all()
+    serializer_class = UserMetricsSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        # Get usage summary
+        pass
+```
+
+### Authentication (api/auth.py)
+
+```python
+# Authentication implementations
+class JWTAuthentication(BaseAuthentication):
+    """JWT authentication for regular users"""
+    def authenticate(self, request):
+        # Authenticate with JWT token
+        pass
+
+class APIKeyAuthentication(BaseAuthentication):
+    """API key authentication for programmatic access"""
+    def authenticate(self, request):
+        # Authenticate with API key
+        pass
+```
+
+### Required Tasks
+
+1. **User Authentication System**
+   - Implement JWT authentication
+   - Create user registration and management
+   - Build role-based access control
+   - Develop API key management
+
+2. **Session Management**
+   - Build session creation and lifecycle management
+   - Implement context preservation between queries
+   - Create session history and export functionality
+   - Develop collaborative session features (optional)
+
+3. **Query Execution System**
+   - Create secure query execution pipeline
+   - Implement result formatting and pagination
+   - Build query cancellation and timeout handling
+   - Develop error handling and reporting
+
+4. **Metrics & Analytics**
+   - Implement usage tracking and statistics
+   - Create dashboards for client usage
+   - Build performance monitoring
+   - Develop anomaly detection for query patterns
+
+## Integration & Shared Components
+
+To ensure these three parts work together seamlessly, you'll need to implement the following shared components:
+
+### Shared Services
+
+1. **Event System**
+   - Create a publish-subscribe event system using Django signals
+   - Implement events for database updates, query execution, etc.
+   - Ensure asynchronous processing for non-blocking operations
+
+2. **Caching Layer**
+   - Implement Redis caching for metadata and query results
+   - Create cache invalidation strategies
+   - Optimize hot paths with intelligent caching
+
+3. **Background Task Processing**
+   - Set up Celery for long-running tasks
+   - Create task queues for different types of operations
+   - Implement task monitoring and error handling
+
+### Integration Points
+
+1. **Database to RAG Integration**
+   - When metadata is updated (Part 1), trigger RAG index update (Part 2)
+   - Share schema information between database and LLM components
+
+2. **RAG to Session Integration**
+   - Store generated SQL in session history (Part 3)
+   - Use session context to improve RAG retrieval (Part 2)
+
+3. **Session to Database Integration**
+   - Execute queries against connected databases (Part 1)
+   - Update session metrics based on query performance (Part 3)
+
+## Development Process
+
+### Setup Phase (Week 1)
+- Set up development environments for all part
+- Initialize Django project with all required apps
+- Create basic models and migrations
+- Configure authentication system
+
+### Development Phase (Weeks 2-6)
+- Implement core functionality in each part
+- Create regular integration points
+- Develop API endpoints
+- Build unit tests for each component
+
+### Integration Phase (Weeks 7-8)
+- Integrate all components
+- Create end-to-end tests
+- Optimize performance
+- Fix integration issues
+
+### Testing Phase (Weeks 9-10)
+- Conduct system testing
+- Perform security audit
+- Optimize resource usage
+- Prepare for deployment
+
+## Technology Stack Details
+
+- **Python/Django**: Core backend framework
+- **PostgreSQL**: Application database
+- **Redis**: Caching and session management
+- **Celery**: Background task processing
+- **LangChain**: LLM framework integration
+- **FAISS/Chroma**: Vector storage for RAG
+- **Hugging Face Transformers**: Embedding models
+- **JWT**: Authentication mechanism
+- **Docker**: Containerization
+- **pytest**: Testing framework
+
+This detailed breakdown should provide a clear roadmap for implementing the backend components of the LLM SQL system.
